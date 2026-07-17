@@ -40,6 +40,8 @@ git clone https://github.com/2021291696/setup-tool.git ~/.claude/skills/setup-to
 
 网络受限环境：把命令里的代理端口（示例为 Clash 默认 `7890`）换成你自己的。
 
+> **不止 Claude Code**：SKILL.md 是纯 Markdown 指令，Codex、Kimi Code 等支持 SKILL.md 的 agent CLI 也可装入各自 skills 目录使用。其中 `claude plugin` / `claude mcp` 等管理命令是 Claude Code 专有，其他 CLI 需替换为对应 CLI 的等价命令；skill 安装、冲突扫描、说明书生成等核心流程通用。
+
 ## 使用
 
 在 Claude Code 里说 `/setup-tool`，或直接说"装个工具 / 下载安装 X 并写说明书 / 配置 X 工具"。
