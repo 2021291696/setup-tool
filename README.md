@@ -24,7 +24,13 @@ git clone https://github.com/2021291696/setup-tool.git <your-skill-directory>/se
 
 ## 说明书格式
 
-`scripts/gen_tool_manual.py` 默认生成 `<工具名>.md`。它强制记录项目用途、常见形态、兼容性判断、安装选项与推荐、最终选择、实际安装/验证/配置、真实调用方式及来源。
+`scripts/gen_tool_manual.py` 默认生成 `<工具名>.md`。说明书只包含：
+
+1. 作用；
+2. 使用方法；
+3. 特殊注意事项（有内容时才显示）。
+
+安装评估、冲突分析、方案选择、验证日志和来源不会写进用户说明书。来源仍是生成器的必填元数据，只用于确保内容有据可查。
 
 Word 是可选导出：
 
@@ -44,9 +50,9 @@ python scripts/scan_existing_tools.py --root "<verified-skill-root>" --query "<t
 
 默认 JSON 输出最多 20 条结果。不可访问的目录会写入结果中的 `errors`，命令仍安全返回，供 agent 解释下一步。
 
-## 触发词原则
+## 使用方法原则
 
-没有官方证据的 slash、自然语言、CLI 或 MCP 调用方式会明确写为“官方资料未声明”。生成器绝不从项目名派生 `/项目名`，也不把安装命令当触发词。
+`usage` 必须来自官方资料或实际验证。生成器绝不从项目名派生 `/项目名`，也不把猜测的 slash、自然语言、CLI 或 MCP 调用写进说明书。
 
 ## 开发
 

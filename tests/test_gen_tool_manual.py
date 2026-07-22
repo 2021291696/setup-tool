@@ -1,4 +1,4 @@
-"""Regression tests for portable, evidence-backed manuals."""
+"""Regression tests for concise, evidence-backed manuals."""
 import sys
 from pathlib import Path
 
@@ -10,62 +10,50 @@ import gen_tool_manual as gtm  # noqa: E402
 
 SAMPLE = {
     "name": "test-tool",
-    "function_desc": "An official tool for a focused task.",
-    "common_forms": ["CLI", "MCP server"],
-    "target_host": "generic (no host adapter required)",
-    "compatibility": {"system_impact": "No known command or port conflict.", "user_value": "Removes a repetitive manual step.", "conflicts": []},
-    "options": [
-        {"id": "A", "title": "Project installation", "description": "Keeps dependencies local.", "impact": "Writes project config.", "steps": ["Run the official command"], "recommended": True},
-        {"id": "B", "title": "Do not install", "description": "Keep the current workflow.", "impact": "No system change.", "steps": ["Take no action"], "recommended": False},
-    ],
-    "selected_option": "A",
-    "install": ["official install command"],
-    "install_location": "project/tools/test-tool",
-    "verification": ["official --version command returned the expected version"],
-    "configuration": {"status": "completed", "summary": "No further setup is needed.", "steps": []},
-    "triggers": {"slash": ["/documented-alias"], "natural_language": [], "cli": ["test-tool --help"], "mcp_tools": []},
+    "function_desc": "Automates a focused, repetitive task.",
+    "usage": ["Run the documented command.", "Check the generated result."],
+    "special_notes": ["Requires noncommercial use."],
     "sources": ["README: https://example.com/test-tool#usage"],
 }
 
 
-def test_markdown_is_the_default_portable_manual(tmp_path):
-    output = gtm.generate_markdown([SAMPLE], tmp_path)
-    content = output.read_text(encoding="utf-8")
-    assert output.name == "test-tool.md"
-    for section in ("项目是什么", "适配性评估", "安装方案", "最终选择", "配置", "来源与核验"):
+def test_manual_contains_only_reader_facing_sections(tmp_path):
+    content = gtm.generate_markdown([SAMPLE], tmp_path).read_text(encoding="utf-8")
+    assert content.startswith("# test-tool")
+    for section in ("## 作用", "## 使用方法", "## 特殊注意事项"):
         assert section in content
+    for forbidden in ("安装方案", "最终选择", "验证结果", "来源与核验", "适配性评估", "配置"):
+        assert forbidden not in content
 
 
-def test_no_trigger_is_explicit_and_never_derived(tmp_path):
-    tool = {**SAMPLE, "name": "no-trigger-tool", "triggers": {"slash": [], "natural_language": [], "cli": [], "mcp_tools": []}}
+def test_special_notes_section_is_omitted_when_empty(tmp_path):
+    tool = {**SAMPLE, "special_notes": []}
     content = gtm.generate_markdown([tool], tmp_path).read_text(encoding="utf-8")
-    assert "Slash 命令：官方资料未声明。" in content
-    assert "自然语言触发：官方资料未声明。" in content
+    assert "特殊注意事项" not in content
+
+
+def test_usage_is_never_derived_from_name(tmp_path):
+    tool = {**SAMPLE, "name": "no-trigger-tool", "usage": ["Open it from the documented host menu."]}
+    content = gtm.generate_markdown([tool], tmp_path).read_text(encoding="utf-8")
     assert "/no-trigger-tool" not in content
+    assert "Open it from the documented host menu." in content
 
 
-def test_documented_alias_is_not_rewritten_to_project_name(tmp_path):
-    tool = {**SAMPLE, "name": "different-name"}
-    content = gtm.generate_markdown([tool], tmp_path).read_text(encoding="utf-8")
-    assert "/documented-alias" in content
-    assert "/different-name" not in content
-
-
-@pytest.mark.parametrize("field", ["sources", "install", "verification"])
-def test_missing_evidence_fails_fast(tmp_path, field):
+@pytest.mark.parametrize("field", ["function_desc", "usage", "sources"])
+def test_missing_required_metadata_fails_fast(tmp_path, field):
     tool = dict(SAMPLE)
     tool.pop(field)
     with pytest.raises(ValueError, match=field):
         gtm.generate_markdown([tool], tmp_path)
 
 
-def test_exactly_one_recommendation_is_required(tmp_path):
-    tool = {**SAMPLE, "options": [{**SAMPLE["options"][0], "recommended": False}]}
-    with pytest.raises(ValueError, match="exactly one"):
-        gtm.generate_markdown([tool], tmp_path)
-
-
-def test_word_remains_an_optional_export(tmp_path):
+def test_word_has_only_allowed_sections(tmp_path):
     output = gtm.generate_docx([SAMPLE], tmp_path)
-    assert output.name == "test-tool.docx"
-    assert output.exists() and output.stat().st_size > 1000
+    from docx import Document
+    text = "\n".join(paragraph.text for paragraph in Document(output).paragraphs)
+    assert all(section in text for section in ("作用", "使用方法", "特殊注意事项"))
+    assert "安装方案" not in text
+
+
+def test_utf8_output_configuration_is_safe():
+    gtm.configure_utf8_output()

@@ -1,14 +1,22 @@
-"""Evidence-backed manual generator for setup-tool.
+"""Generate concise, evidence-backed tool manuals.
 
-Markdown is the default portable artifact. Word is an optional export. The
-generator rejects missing core evidence and never derives an invocation from a
-project name.
+The reader-facing manual contains only purpose, usage, and optional special
+notes. Sources remain required metadata for correctness but are not rendered.
+Markdown is the default output; Word is optional.
 """
 import argparse
 import json
+import sys
 from pathlib import Path
 
 OUT_DIR = Path("工具说明书")
+
+
+def configure_utf8_output() -> None:
+    """Keep paths readable when Windows captures stdout through a pipe."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
 
 
 def _require_text(data: dict, key: str) -> str:
@@ -29,113 +37,35 @@ def _string_list(value: object, field: str, *, required: bool = False) -> list[s
     return result
 
 
-def _object(value: object, field: str) -> dict:
-    if not isinstance(value, dict):
-        raise ValueError(f"{field} must be an object")
-    return value
-
-
 def validate_tool(tool: dict) -> dict:
-    """Normalize input and fail before producing an incomplete manual."""
+    """Reject incomplete or unsourced usage before writing a manual."""
     if not isinstance(tool, dict):
         raise ValueError("each tool must be an object")
     name = _require_text(tool, "name")
     if any(char in name for char in '\\\\/:*?\"<>|') or name in {".", ".."}:
         raise ValueError("name must be a safe filename")
-    compatibility = _object(tool.get("compatibility"), "compatibility")
-    configuration = _object(tool.get("configuration"), "configuration")
-    triggers = tool.get("triggers", {})
-    if not isinstance(triggers, dict):
-        raise ValueError("triggers must be an object")
-    options = tool.get("options")
-    if not isinstance(options, list) or not options:
-        raise ValueError("options must be a non-empty list")
-    clean_options = []
-    for option in options:
-        option = _object(option, "each option")
-        clean_options.append({
-            "id": _require_text(option, "id"),
-            "title": _require_text(option, "title"),
-            "description": _require_text(option, "description"),
-            "impact": _require_text(option, "impact"),
-            "steps": _string_list(option.get("steps"), "option.steps", required=True),
-            "recommended": option.get("recommended") is True,
-        })
-    if sum(item["recommended"] for item in clean_options) != 1:
-        raise ValueError("options must contain exactly one recommended option")
-    selected = _require_text(tool, "selected_option")
-    if selected not in {item["id"] for item in clean_options}:
-        raise ValueError("selected_option must refer to an option id")
     return {
         "name": name,
         "function_desc": _require_text(tool, "function_desc"),
-        "common_forms": _string_list(tool.get("common_forms"), "common_forms", required=True),
-        "target_host": _require_text(tool, "target_host"),
-        "compatibility": {
-            "system_impact": _require_text(compatibility, "system_impact"),
-            "user_value": _require_text(compatibility, "user_value"),
-            "conflicts": _string_list(compatibility.get("conflicts"), "compatibility.conflicts"),
-        },
-        "options": clean_options,
-        "selected_option": selected,
-        "install": _string_list(tool.get("install"), "install", required=True),
-        "install_location": _require_text(tool, "install_location"),
-        "verification": _string_list(tool.get("verification"), "verification", required=True),
-        "configuration": {
-            "status": _require_text(configuration, "status"),
-            "summary": _require_text(configuration, "summary"),
-            "steps": _string_list(configuration.get("steps"), "configuration.steps"),
-        },
-        "triggers": {
-            "slash": _string_list(triggers.get("slash"), "triggers.slash"),
-            "natural_language": _string_list(triggers.get("natural_language"), "triggers.natural_language"),
-            "cli": _string_list(triggers.get("cli"), "triggers.cli"),
-            "mcp_tools": _string_list(triggers.get("mcp_tools"), "triggers.mcp_tools"),
-        },
+        "usage": _string_list(tool.get("usage"), "usage", required=True),
+        "special_notes": _string_list(tool.get("special_notes"), "special_notes"),
         "sources": _string_list(tool.get("sources"), "sources", required=True),
-        "upgrade": _string_list(tool.get("upgrade"), "upgrade"),
-        "uninstall": _string_list(tool.get("uninstall"), "uninstall"),
     }
 
 
 def _bullet(lines: list[str], values: list[str]) -> None:
-    lines.extend(f"- {value}" for value in values)
+    lines.extend(f"{index}. {value}" for index, value in enumerate(values, 1))
 
 
-def render_markdown(tool: dict, index: int) -> str:
-    """Render one complete, reviewable manual section."""
-    lines = [f"## {index}. {tool['name']}", "", "### 项目是什么", tool["function_desc"], "", "### 常见存在形态"]
-    _bullet(lines, tool["common_forms"])
-    lines.extend(["", "### 目标宿主", tool["target_host"], "", "### 适配性评估", f"- 与现有体系：{tool['compatibility']['system_impact']}", f"- 对你的价值：{tool['compatibility']['user_value']}"])
-    if tool["compatibility"]["conflicts"]:
-        _bullet(lines, ["已知冲突或注意事项：" + value for value in tool["compatibility"]["conflicts"]])
-    else:
-        lines.append("- 已知冲突或注意事项：未发现；仍应以来源中的版本约束为准。")
-    lines.extend(["", "### 安装方案"])
-    for option in tool["options"]:
-        marker = "（推荐）" if option["recommended"] else ""
-        lines.extend([f"#### {option['id']}. {option['title']}{marker}", option["description"], f"- 影响：{option['impact']}", "- 步骤："])
-        _bullet(lines, option["steps"])
-    chosen = next(item for item in tool["options"] if item["id"] == tool["selected_option"])
-    lines.extend(["", "### 最终选择", f"{chosen['id']}. {chosen['title']}", "", "### 实际安装"])
-    _bullet(lines, tool["install"])
-    lines.extend([f"- 安装位置：{tool['install_location']}", "", "### 验证结果"])
-    _bullet(lines, tool["verification"])
-    lines.extend(["", "### 配置", f"- 状态：{tool['configuration']['status']}", f"- {tool['configuration']['summary']}"])
-    if tool["configuration"]["steps"]:
-        lines.append("- 后续步骤：")
-        _bullet(lines, tool["configuration"]["steps"])
-    lines.extend(["", "### 调用方式"])
-    labels = {"slash": "Slash 命令", "natural_language": "自然语言触发", "cli": "CLI 调用", "mcp_tools": "MCP 工具"}
-    for key, label in labels.items():
-        values = tool["triggers"][key]
-        lines.append(f"- {label}：{' / '.join(values) if values else '官方资料未声明。'}")
-    if tool["upgrade"] or tool["uninstall"]:
-        lines.extend(["", "### 升级与卸载"])
-        _bullet(lines, ["升级：" + value for value in tool["upgrade"]])
-        _bullet(lines, ["卸载：" + value for value in tool["uninstall"]])
-    lines.extend(["", "### 来源与核验"])
-    _bullet(lines, tool["sources"])
+def render_markdown(tool: dict, heading_level: int) -> str:
+    """Render only the three allowed reader-facing sections."""
+    section = "#" * heading_level
+    subsection = "#" * (heading_level + 1)
+    lines = [f"{section} {tool['name']}", "", f"{subsection} 作用", "", tool["function_desc"], "", f"{subsection} 使用方法", ""]
+    _bullet(lines, tool["usage"])
+    if tool["special_notes"]:
+        lines.extend(["", f"{subsection} 特殊注意事项", ""])
+        lines.extend(f"- {note}" for note in tool["special_notes"])
     return "\n".join(lines)
 
 
@@ -152,15 +82,18 @@ def _validated(tools: list) -> list[dict]:
 def generate_markdown(tools: list, out_dir: Path = OUT_DIR) -> Path:
     tools = _validated(tools)
     out_dir.mkdir(parents=True, exist_ok=True)
-    title = " + ".join(tool["name"] for tool in tools)
-    content = f"# {title} 使用说明\n\n" + "\n\n---\n\n".join(render_markdown(tool, index) for index, tool in enumerate(tools, 1)) + "\n"
+    if len(tools) == 1:
+        content = render_markdown(tools[0], 1) + "\n"
+    else:
+        title = " + ".join(tool["name"] for tool in tools)
+        content = f"# {title} 使用说明\n\n" + "\n\n---\n\n".join(render_markdown(tool, 2) for tool in tools) + "\n"
     output = out_dir / build_filename(tools, ".md")
     output.write_text(content, encoding="utf-8")
     return output
 
 
 def generate_docx(tools: list, out_dir: Path = OUT_DIR) -> Path:
-    """Optional Word export; python-docx is only required for this format."""
+    """Optional Word export; python-docx is required only for this format."""
     try:
         from docx import Document
     except ImportError as exc:
@@ -168,23 +101,26 @@ def generate_docx(tools: list, out_dir: Path = OUT_DIR) -> Path:
     tools = _validated(tools)
     out_dir.mkdir(parents=True, exist_ok=True)
     document = Document()
-    document.add_heading(" + ".join(tool["name"] for tool in tools) + " 使用说明", level=1)
-    for index, tool in enumerate(tools, 1):
-        for line in render_markdown(tool, index).splitlines():
-            if line.startswith("## "):
-                document.add_heading(line[3:], level=2)
-            elif line.startswith("### "):
-                document.add_heading(line[4:], level=3)
-            elif line.startswith("#### "):
-                document.add_heading(line[5:], level=4)
-            elif line and line != "---":
-                document.add_paragraph(line)
+    for tool_index, tool in enumerate(tools):
+        if tool_index:
+            document.add_page_break()
+        document.add_heading(tool["name"], level=1)
+        document.add_heading("作用", level=2)
+        document.add_paragraph(tool["function_desc"])
+        document.add_heading("使用方法", level=2)
+        for step in tool["usage"]:
+            document.add_paragraph(step, style="List Number")
+        if tool["special_notes"]:
+            document.add_heading("特殊注意事项", level=2)
+            for note in tool["special_notes"]:
+                document.add_paragraph(note, style="List Bullet")
     output = out_dir / build_filename(tools, ".docx")
     document.save(output)
     return output
 
 
 def main() -> None:
+    configure_utf8_output()
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", required=True, help="metadata JSON file")
     parser.add_argument("--out-dir", default=str(OUT_DIR))
@@ -194,12 +130,11 @@ def main() -> None:
         tools = json.load(source)
     if isinstance(tools, dict):
         tools = [tools]
-    output_dir = Path(args.out_dir)
     outputs = []
     if args.format in ("markdown", "both"):
-        outputs.append(generate_markdown(tools, output_dir))
+        outputs.append(generate_markdown(tools, Path(args.out_dir)))
     if args.format in ("docx", "both"):
-        outputs.append(generate_docx(tools, output_dir))
+        outputs.append(generate_docx(tools, Path(args.out_dir)))
     print("OK: wrote " + ", ".join(str(path) for path in outputs))
 
 
