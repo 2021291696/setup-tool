@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# 个人决策记录——个人数据，不进仓库
+# Personal decision log — private data, never committed
+installed-tools.json
