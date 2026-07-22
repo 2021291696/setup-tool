@@ -34,6 +34,16 @@ python scripts/gen_tool_manual.py --file metadata.json --out-dir manuals --forma
 
 `--format` 支持 `markdown`（默认）、`docx`、`both`。Word 导出需要 `python-docx`；Markdown 不需要额外 Python 包。
 
+## 体系冲突扫描
+
+扫描必须使用**已核验**的 skill 根目录，并提供具体查询词；不会默认枚举用户主目录或输出全部技能：
+
+```bash
+python scripts/scan_existing_tools.py --root "<verified-skill-root>" --query "<tool-name>"
+```
+
+默认 JSON 输出最多 20 条结果。不可访问的目录会写入结果中的 `errors`，命令仍安全返回，供 agent 解释下一步。
+
 ## 触发词原则
 
 没有官方证据的 slash、自然语言、CLI 或 MCP 调用方式会明确写为“官方资料未声明”。生成器绝不从项目名派生 `/项目名`，也不把安装命令当触发词。

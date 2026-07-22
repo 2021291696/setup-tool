@@ -1,51 +1,17 @@
-# Gotchas — 安装工具常见坑合集
+# 工具接入常见坑
 
-> 这些是实战中踩出来的坑，SKILL.md 和 install-routes.md 里的「坑」引用都指向这里。
-> 欢迎补充。
+## 不要把宿主细节当成通用事实
 
-## npx skills add 的实际安装位置
+Claude Code、Codex、Hermes、OpenClaw 的 skill 路径、MCP 注册命令和刷新机制可能不同。仅当 adapter 有官方来源和实际验证时才写入这些命令；否则使用 generic 路线并说明宿主接入待验证。
 
-用 `npx -y skills add <repo> --global` 装 skill 时：
+## 冲突扫描必须是窄查询
 
-- 实际文件落在 `~/.agents/skills/<name>/`，`~/.claude/skills/<name>` 是 **symlink**
-- 验证时两个位置都要看：`ls -la ~/.claude/skills/<name>` 确认链接有效 + `test -s ~/.claude/skills/<name>/SKILL.md`
-- 某些环境下安装输出会误报 "PromptScript" 类警告——只要 SKILL.md 存在且 CC 能列出，即可忽略
-- 一个 repo 可能展开成多个子 skill（装完 `ls ~/.claude/skills/ | grep <name>` 数一下）
+不要扫描默认主目录，更不要把全部已安装 skill 输出给模型。使用 `scripts/scan_existing_tools.py` 时必须提供已核验根目录和具体查询词；它最多返回 20 条结果，并将不可访问目录作为结构化 `errors` 返回。
 
-## MCP 装/改后必须重启 CC
+## 触发方式只能引用证据
 
-`claude mcp add` 之后 `claude mcp list` 能立刻看到新 server、甚至显示 Connected，但 **agent 会话内的工具列表是启动时加载的**——不重启 CC，模型根本调不到新 MCP 的工具。
+没有官方证据的 slash、自然语言、CLI 或 MCP 调用方式应写为“官方资料未声明”。项目名、安装命令和目录名都不是触发词。
 
-- add / remove / 改配置 / update 都要重启
-- 「Connected ≠ agent 能调工具」
-- 同理：`claude plugin install` / `enable` / `update` 后也要重启
+## Word 导出是可选项
 
-## GitHub release 下载的代理分界
-
-网络受限环境下，`gh` 的行为分两段：
-
-| 操作 | 走什么 | 需要代理吗 |
-|------|--------|-----------|
-| `gh api` / `gh search` / `gh repo view` / `gh release download` 的**清单请求** | GitHub API | 通常不需要 |
-| `gh release download` 的**二进制文件本体** | GitHub CDN | 大概率需要 |
-| `git clone` / `npx skills add` | git over HTTPS | 大概率需要 |
-
-所以 `gh release download` 建议整条命令带代理前缀，最省心。
-
-## Word 说明书（python-docx）的 CJK 字体
-
-生成中文 docx 时只设 `run.font.name = "微软雅黑"` 不够——Word 对东亚字符走单独的 `w:eastAsia` 字体槽，不设就会回退到默认字体、中西文混排破相。
-
-正确做法（`gen_tool_manual.py` 的 `set_cn_font` 已内置）：
-
-```python
-rpr = run._element.get_or_add_rPr()
-rfonts = OxmlElement("w:rFonts")
-rfonts.set(qn("w:eastAsia"), "微软雅黑")
-rfonts.set(qn("w:ascii"), "微软雅黑")
-rfonts.set(qn("w:hAnsi"), "微软雅黑")
-```
-
-生成后的验证也要做：用 `python-docx` 读回文件，确认段落数 > 0 且中文字符正常（不是乱码/方块）——别只看文件生成了没有。
-
-非 Windows 系统没有「微软雅黑」时 Word 会自动 fallback，不影响内容正确性；在意观感可把 `CN_FONT` 常量换成本机有的中文字体。
+Markdown 是默认说明书，因此不依赖 `python-docx`。仅在用户明确要求 `.docx` 时安装或使用 `python-docx`，并在生成后回读确认文件存在和文本正常。
