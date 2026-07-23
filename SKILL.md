@@ -53,7 +53,7 @@ python scripts/scan_existing_tools.py --root "<已核验的 skill 根目录>" --
 
 安装评估、方案选择、冲突分析、安装日志和验证证据只用于当前安装流程，不写进给用户日常查阅的说明书。
 
-默认生成 Markdown，用户需要正式交付时再导出 Word。调用 `scripts/gen_tool_manual.py` 时只提供：
+默认生成 Word（`.docx`）。只有用户明确要求 Markdown，或明确选择同时保留两种格式时，才生成 `.md`。不得在 Word 依赖缺失时静默降级为 Markdown；应明确说明缺少的依赖并处理后再生成。调用 `scripts/gen_tool_manual.py` 时只提供：
 
 ```json
 {
@@ -71,7 +71,7 @@ python scripts/scan_existing_tools.py --root "<已核验的 skill 根目录>" --
 2. **使用方法**；
 3. **特殊注意事项**——仅当 `special_notes` 非空时显示，否则整节省略。
 
-`usage` 必须来自官方资料或实际验证，不能为空；不从工具名派生 slash 命令、口语触发词、CLI 或 MCP 调用。生成后回读文档，确认章节精简、中文正常且没有安装审计内容。
+`usage` 必须来自官方资料或实际验证，不能为空；不从工具名派生 slash 命令、口语触发词、CLI 或 MCP 调用。生成后必须回读 Word 文档，确认文件可打开、章节精简、中文正常且没有安装审计内容。
 
 ## 宿主 adapter 约定
 

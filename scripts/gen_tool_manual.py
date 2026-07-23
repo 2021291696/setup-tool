@@ -2,14 +2,24 @@
 
 The reader-facing manual contains only purpose, usage, and optional special
 notes. Sources remain required metadata for correctness but are not rendered.
-Markdown is the default output; Word is optional.
+Word is the default output; Markdown is optional.
 """
 import argparse
 import json
 import sys
 from pathlib import Path
+from zipfile import BadZipFile, ZipFile
 
 OUT_DIR = Path("工具说明书")
+DEFAULT_FORMAT = "docx"
+WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
 
 
 def configure_utf8_output() -> None:
@@ -42,7 +52,14 @@ def validate_tool(tool: dict) -> dict:
     if not isinstance(tool, dict):
         raise ValueError("each tool must be an object")
     name = _require_text(tool, "name")
-    if any(char in name for char in '\\\\/:*?\"<>|') or name in {".", ".."}:
+    reserved_stem = name.split(".", 1)[0].upper()
+    if (
+        any(char in name for char in '\\\\/:*?\"<>|')
+        or any(ord(char) < 32 for char in name)
+        or name.endswith(".")
+        or name in {".", ".."}
+        or reserved_stem in WINDOWS_RESERVED_NAMES
+    ):
         raise ValueError("name must be a safe filename")
     return {
         "name": name,
@@ -93,14 +110,41 @@ def generate_markdown(tools: list, out_dir: Path = OUT_DIR) -> Path:
 
 
 def generate_docx(tools: list, out_dir: Path = OUT_DIR) -> Path:
-    """Optional Word export; python-docx is required only for this format."""
+    """Generate the default Word manual."""
     try:
         from docx import Document
+        from docx.oxml.ns import qn
+        from docx.shared import Mm, Pt, RGBColor
     except ImportError as exc:
-        raise RuntimeError("Word export requires python-docx; use Markdown or install python-docx") from exc
+        raise RuntimeError(
+            "Word output requires python-docx; install it or explicitly choose --format markdown"
+        ) from exc
     tools = _validated(tools)
     out_dir.mkdir(parents=True, exist_ok=True)
     document = Document()
+    zoom = document.settings.element.find(qn("w:zoom"))
+    if zoom is not None:
+        zoom.set(qn("w:percent"), "100")
+    section = document.sections[0]
+    section.page_width = Mm(210)
+    section.page_height = Mm(297)
+    section.top_margin = Mm(20)
+    section.right_margin = Mm(22)
+    section.bottom_margin = Mm(20)
+    section.left_margin = Mm(22)
+    for style_name, size, bold in (
+        ("Normal", 11, False),
+        ("Heading 1", 18, True),
+        ("Heading 2", 14, True),
+    ):
+        style = document.styles[style_name]
+        style.font.name = "Arial"
+        style.font.size = Pt(size)
+        style.font.bold = bold
+        style.font.color.rgb = RGBColor(0, 0, 0)
+        style._element.get_or_add_rPr().get_or_add_rFonts().set(
+            qn("w:eastAsia"), "Microsoft YaHei"
+        )
     for tool_index, tool in enumerate(tools):
         if tool_index:
             document.add_page_break()
@@ -116,27 +160,74 @@ def generate_docx(tools: list, out_dir: Path = OUT_DIR) -> Path:
                 document.add_paragraph(note, style="List Bullet")
     output = out_dir / build_filename(tools, ".docx")
     document.save(output)
+    _verify_docx(output, tools, Document)
     return output
 
 
-def main() -> None:
-    configure_utf8_output()
+def _verify_docx(output: Path, tools: list[dict], document_class: type) -> None:
+    """Fail if the saved Word package cannot be read back as the intended manual."""
+    if not output.is_file() or output.stat().st_size == 0:
+        raise RuntimeError(f"Word output was not created correctly: {output}")
+    try:
+        with ZipFile(output) as archive:
+            damaged_member = archive.testzip()
+        if damaged_member is not None:
+            raise RuntimeError(f"Word output contains a damaged member: {damaged_member}")
+        paragraphs = document_class(output).paragraphs
+    except (BadZipFile, OSError, ValueError) as exc:
+        raise RuntimeError(f"Word output could not be read back: {output}") from exc
+
+    expected_headings = []
+    expected_body = []
+    for tool in tools:
+        expected_headings.extend((tool["name"], "作用", "使用方法"))
+        expected_body.extend((tool["function_desc"], *tool["usage"]))
+        if tool["special_notes"]:
+            expected_headings.append("特殊注意事项")
+            expected_body.extend(tool["special_notes"])
+
+    actual_headings = [
+        paragraph.text
+        for paragraph in paragraphs
+        if paragraph.style.style_id in {"Heading1", "Heading2"}
+    ]
+    if actual_headings != expected_headings:
+        raise RuntimeError("Word output headings do not match the concise manual contract")
+    paragraph_text = [paragraph.text for paragraph in paragraphs]
+    if any(value not in paragraph_text for value in expected_body):
+        raise RuntimeError("Word output is missing reader-facing content")
+    rendered_text = "\n".join(paragraph_text)
+    if any(source in rendered_text for tool in tools for source in tool["sources"]):
+        raise RuntimeError("Word output leaked internal source metadata")
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", required=True, help="metadata JSON file")
     parser.add_argument("--out-dir", default=str(OUT_DIR))
-    parser.add_argument("--format", choices=("markdown", "docx", "both"), default="markdown")
-    args = parser.parse_args()
-    with open(args.file, encoding="utf-8") as source:
-        tools = json.load(source)
-    if isinstance(tools, dict):
-        tools = [tools]
-    outputs = []
-    if args.format in ("markdown", "both"):
-        outputs.append(generate_markdown(tools, Path(args.out_dir)))
-    if args.format in ("docx", "both"):
-        outputs.append(generate_docx(tools, Path(args.out_dir)))
+    parser.add_argument("--format", choices=("docx", "markdown", "both"), default=DEFAULT_FORMAT)
+    return parser
+
+
+def main() -> int:
+    configure_utf8_output()
+    args = build_parser().parse_args()
+    try:
+        with open(args.file, encoding="utf-8") as source:
+            tools = json.load(source)
+        if isinstance(tools, dict):
+            tools = [tools]
+        outputs = []
+        if args.format in ("markdown", "both"):
+            outputs.append(generate_markdown(tools, Path(args.out_dir)))
+        if args.format in ("docx", "both"):
+            outputs.append(generate_docx(tools, Path(args.out_dir)))
+    except (OSError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     print("OK: wrote " + ", ".join(str(path) for path in outputs))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

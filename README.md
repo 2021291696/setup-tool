@@ -10,7 +10,7 @@
 2. 说明项目用途和常见形态，检查与已有体系的冲突及实际价值。
 3. 给出至少两个选择（包含“不安装”）和唯一推荐；用户决定后才执行。
 4. 安装、真实验证，并自动完成安全可逆的配置或逐步教学。
-5. 默认生成 Markdown 使用说明；可选生成 Word。
+5. 默认生成 Word 使用说明；按需选择 Markdown 或同时生成两种格式。
 
 ## 安装
 
@@ -24,7 +24,7 @@ git clone https://github.com/2021291696/setup-tool.git <your-skill-directory>/se
 
 ## 说明书格式
 
-`scripts/gen_tool_manual.py` 默认生成 `<工具名>.md`。说明书只包含：
+`scripts/gen_tool_manual.py` 默认生成 `<工具名>.docx`。说明书只包含：
 
 1. 作用；
 2. 使用方法；
@@ -32,13 +32,25 @@ git clone https://github.com/2021291696/setup-tool.git <your-skill-directory>/se
 
 安装评估、冲突分析、方案选择、验证日志和来源不会写进用户说明书。来源仍是生成器的必填元数据，只用于确保内容有据可查。
 
-Word 是可选导出：
+默认生成 Word：
 
 ```bash
-python scripts/gen_tool_manual.py --file metadata.json --out-dir manuals --format both
+python scripts/gen_tool_manual.py --file metadata.json --out-dir manuals
 ```
 
-`--format` 支持 `markdown`（默认）、`docx`、`both`。Word 导出需要 `python-docx`；Markdown 不需要额外 Python 包。
+`--format` 支持 `docx`（默认）、`markdown`、`both`。Word 生成需要执行脚本的 Python 环境已安装 `python-docx`；依赖缺失时脚本会明确报错，不会静默改成 Markdown。
+
+仓库已在 `requirements.txt` 声明 Word 依赖；安装它不需要安装 Microsoft Word：
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+只有明确需要纯文本说明书时才选择 Markdown：
+
+```bash
+python scripts/gen_tool_manual.py --file metadata.json --out-dir manuals --format markdown
+```
 
 ## 体系冲突扫描
 
